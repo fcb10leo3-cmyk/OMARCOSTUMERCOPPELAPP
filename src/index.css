@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme {
+  --color-coppel-blue: #005CB9;
+  --color-coppel-darkblue: #003876;
+  --color-coppel-yellow: #FFD200;
+  --color-coppel-yellow-dark: #E5BD00;
+  --color-coppel-red: #E20613;
+  --color-coppel-light: #F8F9FA;
+  --color-coppel-dark: #111827;
+  --color-coppel-gray: #6B7280;
+}
+
+@layer utilities {
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@keyframes scan {
+  0%, 100% { top: 12%; }
+  50% { top: 88%; }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.85); opacity: 0.6; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%) skewX(-12deg); }
+  100% { transform: translateX(200%) skewX(-12deg); }
+}
+
+.animate-scan {
+  animation: scan 2s infinite linear;
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-shimmer {
+  animation: shimmer 1.8s infinite;
+}

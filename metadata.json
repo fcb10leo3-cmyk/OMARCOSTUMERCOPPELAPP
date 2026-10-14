@@ -1,0 +1,6 @@
+{
+  "name": "Coppel Phygital - App Móvil Consumidor",
+  "description": "Aplicación móvil Coppel para compras phygital en tienda: escaneo de productos, carrito inteligente, planes de pago a crédito y ticket digital con QR para arco óptico de salida.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
