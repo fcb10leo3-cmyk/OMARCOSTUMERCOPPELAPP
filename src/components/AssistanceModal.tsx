@@ -10,10 +10,11 @@ export interface AssistanceCallResponse {
   requesterRole: string;
   requesterName: string;
   urgency: 'normal' | 'urgente';
-  status: string;
-  assignedAdvisor: string;
-  estimatedArrival: string;
+  status: 'pendiente' | 'en_camino' | 'atendido' | 'cancelado';
+  assignedAdvisor: string | null;
+  estimatedArrival: string | null;
   createdAt: string;
+  acceptedAt?: string;
 }
 
 interface AssistanceModalProps {
@@ -51,6 +52,8 @@ export const AssistanceModal: React.FC<AssistanceModalProps> = ({
     'Pasillo 2 - Electrónica y TV'
   ];
 
+  const isAssigned = callData?.status === 'en_camino' && Boolean(callData?.assignedAdvisor);
+
   return (
     <div
       onClick={onClose}
@@ -68,57 +71,94 @@ export const AssistanceModal: React.FC<AssistanceModalProps> = ({
         </button>
 
         {/* Icon & Pulse Animation */}
-        <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-3 border border-blue-100 relative">
-          <div className="absolute inset-0 rounded-full bg-[#FFD200]/40 animate-ping opacity-60" />
-          <Hand className="w-8 h-8 text-[#005CB9] z-10" />
-        </div>
+        {!isAssigned ? (
+          <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mb-3 border border-blue-100 relative">
+            <div className="absolute inset-0 rounded-full bg-[#FFD200]/40 animate-ping opacity-60" />
+            <Hand className="w-8 h-8 text-[#005CB9] z-10" />
+          </div>
+        ) : (
+          <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mb-3 border-2 border-green-200 relative animate-in zoom-in-75 duration-300">
+            <UserCheck className="w-9 h-9 text-green-600 z-10" />
+          </div>
+        )}
 
         {/* Status Pill */}
-        <div className="inline-flex items-center gap-1.5 bg-yellow-100 text-yellow-900 text-[10px] font-extrabold px-3 py-1 rounded-full mb-2">
-          <UserCheck className="w-3.5 h-3.5 text-[#005CB9]" />
-          <span>{isLoading ? 'Conectando con Asesores...' : 'Asesor Coppel Notificado'}</span>
-        </div>
+        {!isAssigned ? (
+          <div className="inline-flex items-center gap-1.5 bg-yellow-100 text-yellow-900 text-[10px] font-extrabold px-3 py-1 rounded-full mb-1.5">
+            <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+            <span>{isLoading ? 'Conectando con Asesores...' : 'Buscando asesor disponible...'}</span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-1.5 bg-green-100 text-green-800 text-[10px] font-extrabold px-3 py-1 rounded-full mb-1.5 animate-in fade-in">
+            <span className="w-2 h-2 rounded-full bg-green-500" />
+            <span>¡Asesor asignado! En camino</span>
+          </div>
+        )}
 
         {/* Main Notice */}
-        <h3 className="font-extrabold text-gray-900 text-base leading-snug mb-1">
-          La Asistencia está en camino, por favor espere dónde está
-        </h3>
+        {!isAssigned ? (
+          <>
+            <h3 className="font-extrabold text-gray-900 text-base leading-snug mb-1">
+              Solicitud de Asistencia Enviada
+            </h3>
+            <p className="text-xs text-gray-500 mb-2">
+              Se ha notificado a la app de asesores en piso. En cuanto alguien acepte, verás su nombre aquí.
+            </p>
+          </>
+        ) : (
+          <>
+            <h3 className="font-extrabold text-green-700 text-lg leading-snug mb-0.5">
+              ¡{callData?.assignedAdvisor} va en camino!
+            </h3>
+            <p className="text-xs text-gray-600 mb-2">
+              Un asesor de Coppel se dirige a tu ubicación para atenderte.
+            </p>
+          </>
+        )}
 
         {/* Customer PIN Handshake Card (As specified in webhook response) */}
         {callData?.customerPin && (
-          <div className="w-full bg-blue-50/80 border-2 border-[#005CB9]/30 rounded-2xl p-3 my-2.5 text-center shadow-xs">
+          <div className={`w-full rounded-2xl p-3 my-1.5 text-center shadow-xs transition-colors ${
+            isAssigned ? 'bg-green-50/80 border-2 border-green-300' : 'bg-blue-50/80 border-2 border-[#005CB9]/30'
+          }`}>
             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block">
               Tu PIN de Asistencia en Tienda
             </span>
-            <div className="text-3xl font-black font-mono text-[#005CB9] tracking-widest my-0.5">
+            <div className={`text-3xl font-black font-mono tracking-widest my-0.5 ${
+              isAssigned ? 'text-green-700' : 'text-[#005CB9]'
+            }`}>
               {callData.customerPin}
             </div>
             <p className="text-[10px] text-gray-600 font-medium">
-              Compártelo con tu asesor <strong className="text-gray-900">{callData.assignedAdvisor}</strong> al llegar.
+              {isAssigned ? (
+                <>Muestra este código a <strong>{callData.assignedAdvisor}</strong> al llegar.</>
+              ) : (
+                <>Guarda este PIN para identificarte con tu asesor cuando llegue.</>
+              )}
             </p>
           </div>
         )}
 
         {/* Details List */}
-        <div className="w-full text-left space-y-1.5 text-xs bg-gray-50 p-2.5 rounded-xl border border-gray-100 mb-3">
+        <div className="w-full text-left space-y-1.5 text-xs bg-gray-50 p-2.5 rounded-xl border border-gray-100 my-2">
           <div className="flex items-center gap-2 text-gray-700">
             <MapPin className="w-3.5 h-3.5 text-[#005CB9] shrink-0" />
             <span className="truncate">
-              <strong>Ubicación:</strong> {callData?.aisle || selectedAisle}
+              <strong>Lugar:</strong> {callData?.aisle || selectedAisle}
             </span>
           </div>
 
           <div className="flex items-center gap-2 text-gray-700">
             <Clock className="w-3.5 h-3.5 text-green-600 shrink-0" />
             <span>
-              <strong>Llegada estimada:</strong> {callData?.estimatedArrival || '1-2 minutos'}
+              <strong>Tiempo estimado:</strong> {callData?.estimatedArrival || (isAssigned ? '1-2 minutos' : 'En espera de confirmación')}
             </span>
           </div>
 
           <div className="flex items-center gap-2 text-gray-700">
             <Shield className="w-3.5 h-3.5 text-[#005CB9] shrink-0" />
             <span className="truncate">
-              <strong>Motivo:</strong> {callData?.reason || selectedReason}
+              <strong>Tipo de ayuda:</strong> {callData?.reason || selectedReason}
             </span>
           </div>
         </div>

@@ -30,10 +30,11 @@ interface AssistanceCall {
   requesterRole: string;
   requesterName: string;
   urgency: 'normal' | 'urgente';
-  status: 'notificado' | 'en_camino' | 'atendido' | 'cancelado';
-  assignedAdvisor: string;
-  estimatedArrival: string;
+  status: 'pendiente' | 'en_camino' | 'atendido' | 'cancelado';
+  assignedAdvisor: string | null;
+  estimatedArrival: string | null;
   createdAt: string;
+  acceptedAt?: string;
   cartTotal?: number;
 }
 
@@ -47,9 +48,9 @@ const assistanceCalls: AssistanceCall[] = [
     requesterRole: 'cliente',
     requesterName: 'App Móvil Consumidor',
     urgency: 'normal',
-    status: 'en_camino',
-    assignedAdvisor: 'Roberto Gómez (Asesor Calzado)',
-    estimatedArrival: '1 minuto',
+    status: 'pendiente',
+    assignedAdvisor: null,
+    estimatedArrival: null,
     createdAt: new Date(Date.now() - 1000 * 60 * 2).toISOString(),
     cartTotal: 2199
   }
@@ -83,8 +84,9 @@ app.get('/api/health', (req, res) => {
 
 /**
  * POST /api/call-assistance
- * Endpoint for in-store customer assistance requests.
- * Compatible with external advisor tablets, consumer apps and webhooks.
+ * STEP 1: Customer requests assistance.
+ * NOTE: Initial status is strictly 'pendiente' with assignedAdvisor: null.
+ * No advisor has confirmed yet. The notification is broadcast to the advisor app.
  */
 app.post('/api/call-assistance', (req, res) => {
   try {
@@ -102,14 +104,6 @@ app.post('/api/call-assistance', (req, res) => {
     const customerPin = Math.floor(1000 + Math.random() * 9000).toString();
     const callId = `CALL-${Math.floor(10000 + Math.random() * 90000)}`;
 
-    const advisors = [
-      'Carlos Mendoza (Piso de Ventas)',
-      'Mariana Fuentes (Asesora Crédito Coppel)',
-      'Luis Alberto R. (Línea Blanca y Hogar)',
-      'Ana Patricia Soto (Electrónica y Telefonía)'
-    ];
-    const assignedAdvisor = advisors[Math.floor(Math.random() * advisors.length)];
-
     const newCall: AssistanceCall = {
       id: callId,
       customerPin,
@@ -119,22 +113,21 @@ app.post('/api/call-assistance', (req, res) => {
       requesterRole,
       requesterName,
       urgency: urgency === 'urgente' ? 'urgente' : 'normal',
-      status: 'notificado',
-      assignedAdvisor,
-      estimatedArrival: '1-2 minutos',
+      status: 'pendiente', // Strictly pending! No one has confirmed yet
+      assignedAdvisor: null, // Null until an advisor in the other app clicks 'Voy en camino'
+      estimatedArrival: null,
       createdAt: new Date().toISOString(),
       cartTotal
     };
 
-    // Prepend to list
+    // Prepend to queue
     assistanceCalls.unshift(newCall);
 
-    console.log(`[ASSISTANCE REQUEST] ${newCall.id} at ${aisle} (PIN: ${customerPin})`);
+    console.log(`[ASSISTANCE REQUESTED - PENDING] ${newCall.id} at ${aisle} (PIN: ${customerPin})`);
 
-    // Return the exact JSON structure expected by the client and external apps
     return res.status(200).json({
       success: true,
-      message: `¡Listo! Tu asesor ${assignedAdvisor} ya fue notificado y viene en camino con tu PIN: ${customerPin}`,
+      message: `Solicitud recibida. Esperando confirmación de un asesor de tienda. Tu PIN: ${customerPin}`,
       call: newCall
     });
   } catch (error) {
@@ -159,12 +152,60 @@ app.get('/api/call-assistance', (req, res) => {
 });
 
 /**
+ * GET /api/call-assistance/:id
+ * Polls the current status of a specific call (to know if an advisor accepted it)
+ */
+app.get('/api/call-assistance/:id', (req, res) => {
+  const { id } = req.params;
+  const target = assistanceCalls.find((c) => c.id === id);
+  if (!target) {
+    return res.status(404).json({ success: false, error: 'Llamada no encontrada' });
+  }
+
+  return res.json({
+    success: true,
+    call: target
+  });
+});
+
+/**
+ * POST /api/call-assistance/:id/accept
+ * STEP 2: An advisor in the OTHER app confirms they are on their way!
+ * Sets assignedAdvisor, estimatedArrival and status to 'en_camino'.
+ */
+app.post('/api/call-assistance/:id/accept', (req, res) => {
+  const { id } = req.params;
+  const {
+    advisorName = 'Carlos Mendoza (Piso de Ventas)',
+    estimatedArrival = '1-2 minutos'
+  } = req.body;
+
+  const target = assistanceCalls.find((c) => c.id === id);
+  if (!target) {
+    return res.status(404).json({ success: false, error: 'Llamada no encontrada' });
+  }
+
+  target.status = 'en_camino';
+  target.assignedAdvisor = advisorName;
+  target.estimatedArrival = estimatedArrival;
+  target.acceptedAt = new Date().toISOString();
+
+  console.log(`[ASSISTANCE ACCEPTED] ${target.id} accepted by ${advisorName}`);
+
+  return res.json({
+    success: true,
+    message: `¡Asignado! ${advisorName} va en camino al ${target.aisle}`,
+    call: target
+  });
+});
+
+/**
  * PATCH /api/call-assistance/:id
- * Updates status of an assistance call (e.g., advisor claims or finishes request)
+ * General updates for status or advisor assignment
  */
 app.patch('/api/call-assistance/:id', (req, res) => {
   const { id } = req.params;
-  const { status, advisor } = req.body;
+  const { status, advisor, advisorName, estimatedArrival } = req.body;
 
   const target = assistanceCalls.find((c) => c.id === id);
   if (!target) {
@@ -172,7 +213,11 @@ app.patch('/api/call-assistance/:id', (req, res) => {
   }
 
   if (status) target.status = status;
-  if (advisor) target.assignedAdvisor = advisor;
+  if (advisor || advisorName) target.assignedAdvisor = advisor || advisorName;
+  if (estimatedArrival) target.estimatedArrival = estimatedArrival;
+  if (status === 'en_camino' && !target.acceptedAt) {
+    target.acceptedAt = new Date().toISOString();
+  }
 
   return res.json({
     success: true,

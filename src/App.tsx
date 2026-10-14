@@ -287,7 +287,7 @@ export default function App() {
   ) => {
     setIsAssistanceLoading(true);
     setShowAssistance(true);
-    showToast('Llamando a asesor de tienda...', false);
+    showToast('Enviando solicitud a asesores de tienda...', false);
 
     const currentTotal = cartItems.reduce((acc, it) => acc + it.price * it.quantity, 0);
 
@@ -310,8 +310,8 @@ export default function App() {
       if (data.success && data.call) {
         setAssistanceCallData(data.call);
         showToast(
-          `¡Listo! Asesor ${data.call.assignedAdvisor} en camino (PIN: ${data.call.customerPin})`,
-          true
+          `Solicitud enviada (PIN: ${data.call.customerPin}). Esperando a un asesor...`,
+          false
         );
       }
     } catch (error) {
@@ -321,6 +321,31 @@ export default function App() {
       setIsAssistanceLoading(false);
     }
   };
+
+  // Poll assistance call status while waiting for an advisor to accept in their app
+  useEffect(() => {
+    if (!showAssistance || !assistanceCallData?.id || assistanceCallData.status !== 'pendiente') {
+      return;
+    }
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/call-assistance/${assistanceCallData.id}`);
+        const data = await res.json();
+        if (data.success && data.call) {
+          if (data.call.status === 'en_camino' && data.call.assignedAdvisor) {
+            setAssistanceCallData(data.call);
+            playSuccessChime();
+            showToast(`¡Asignado! ${data.call.assignedAdvisor} va en camino`, true);
+          }
+        }
+      } catch (err) {
+        console.warn('Error polling assistance call status:', err);
+      }
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [showAssistance, assistanceCallData]);
 
   return (
     <div className="min-h-screen bg-slate-200 flex flex-col items-center justify-center sm:p-4 select-none">

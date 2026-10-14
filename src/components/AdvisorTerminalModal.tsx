@@ -52,20 +52,25 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
     }
   }, [isOpen]);
 
-  const handleUpdateStatus = async (id: string, status: string) => {
+  const [myAdvisorName, setMyAdvisorName] = useState('Carlos Mendoza (Piso de Ventas)');
+
+  const handleAcceptCall = async (id: string) => {
     try {
-      const res = await fetch(`/api/call-assistance/${id}`, {
-        method: 'PATCH',
+      const res = await fetch(`/api/call-assistance/${id}/accept`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status })
+        body: JSON.stringify({
+          advisorName: myAdvisorName,
+          estimatedArrival: '1-2 minutos'
+        })
       });
       const data = await res.json();
       if (data.success) {
-        onShowToast(`Llamada actualizada: ${status}`, true);
+        onShowToast(`¡Confirmado! ${myAdvisorName} asignado`, true);
         fetchCalls();
       }
     } catch {
-      onShowToast('Error al actualizar estado');
+      onShowToast('Error al confirmar asistencia');
     }
   };
 
@@ -191,6 +196,18 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                 </button>
               </div>
 
+              {/* Advisor profile bar */}
+              <div className="bg-blue-50/70 border border-blue-200 p-2.5 rounded-xl flex items-center justify-between text-xs">
+                <span className="text-[11px] font-bold text-gray-700">Tu nombre de asesor:</span>
+                <input
+                  type="text"
+                  value={myAdvisorName}
+                  onChange={(e) => setMyAdvisorName(e.target.value)}
+                  className="bg-white border border-gray-300 rounded-lg px-2.5 py-1 text-xs font-bold text-[#005CB9] focus:outline-none focus:ring-2 focus:ring-[#FFD200]"
+                  placeholder="Ej. Carlos Mendoza"
+                />
+              </div>
+
               {calls.length === 0 ? (
                 <div className="text-center py-10 border border-dashed border-gray-200 rounded-2xl">
                   <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto mb-2" />
@@ -201,7 +218,7 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                 </div>
               ) : (
                 calls.map((call) => {
-                  const isNotificado = call.status === 'notificado';
+                  const isPendiente = call.status === 'pendiente' || !call.assignedAdvisor;
                   const isEnCamino = call.status === 'en_camino';
                   const isAtendido = call.status === 'atendido';
 
@@ -209,11 +226,11 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                     <div
                       key={call.id}
                       className={`p-3.5 rounded-2xl border transition-all ${
-                        isNotificado
-                          ? 'bg-amber-50/60 border-amber-200 ring-2 ring-amber-400/40'
+                        isPendiente
+                          ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/50 shadow-sm'
                           : isEnCamino
                           ? 'bg-blue-50/50 border-blue-200'
-                          : 'bg-gray-50 border-gray-200 opacity-70'
+                          : 'bg-gray-50 border-gray-200 opacity-60'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
@@ -224,14 +241,14 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                             </span>
                             <span
                               className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full ${
-                                isNotificado
-                                  ? 'bg-amber-100 text-amber-800'
+                                isPendiente
+                                  ? 'bg-amber-200 text-amber-900 animate-pulse'
                                   : isEnCamino
                                   ? 'bg-blue-100 text-blue-800'
                                   : 'bg-green-100 text-green-800'
                               }`}
                             >
-                              {call.status}
+                              {isPendiente ? '⚠️ Sin Asignar' : call.status}
                             </span>
                           </div>
                           <h4 className="font-bold text-xs text-gray-900 mt-1 leading-tight">
@@ -251,10 +268,10 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                       </div>
 
                       {/* Location & Details */}
-                      <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600 my-2 bg-white/80 p-2 rounded-xl border border-gray-100">
+                      <div className="grid grid-cols-2 gap-2 text-[11px] text-gray-600 my-2 bg-white/90 p-2 rounded-xl border border-gray-100">
                         <div className="flex items-center gap-1 truncate">
                           <MapPin className="w-3.5 h-3.5 text-[#005CB9] shrink-0" />
-                          <span className="truncate">{call.aisle}</span>
+                          <span className="truncate font-semibold text-gray-800">{call.aisle}</span>
                         </div>
                         <div className="flex items-center gap-1 truncate">
                           <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
@@ -264,23 +281,35 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
 
                       {/* Actions */}
                       <div className="flex items-center justify-between pt-2 border-t border-gray-200/60 text-xs">
-                        <span className="text-[10px] text-gray-500 font-medium">
-                          Asesor: <strong>{call.assignedAdvisor}</strong>
+                        <span className="text-[10px] text-gray-500 font-medium truncate max-w-[170px]">
+                          Asesor:{' '}
+                          <strong className={isPendiente ? 'text-amber-700' : 'text-gray-800'}>
+                            {call.assignedAdvisor || 'Nadie asignado aún'}
+                          </strong>
                         </span>
 
-                        <div className="flex gap-1.5">
-                          {isNotificado && (
+                        <div className="flex gap-1.5 shrink-0">
+                          {isPendiente && (
                             <button
-                              onClick={() => handleUpdateStatus(call.id, 'en_camino')}
-                              className="bg-[#005CB9] text-white font-bold text-[10px] px-3 py-1.5 rounded-lg hover:bg-blue-700 transition"
+                              onClick={() => handleAcceptCall(call.id)}
+                              className="bg-[#005CB9] hover:bg-blue-700 active:scale-95 text-white font-extrabold text-[11px] px-3.5 py-1.5 rounded-xl shadow-xs transition flex items-center gap-1"
                             >
-                              Voy en camino
+                              <span>Aceptar y voy en camino</span>
                             </button>
                           )}
-                          {!isAtendido && (
+
+                          {isEnCamino && (
                             <button
-                              onClick={() => handleUpdateStatus(call.id, 'atendido')}
-                              className="bg-green-600 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg hover:bg-green-700 transition"
+                              onClick={async () => {
+                                await fetch(`/api/call-assistance/${call.id}`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ status: 'atendido' })
+                                });
+                                onShowToast('Marcado como atendido', true);
+                                fetchCalls();
+                              }}
+                              className="bg-green-600 hover:bg-green-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg transition"
                             >
                               Atendido ✓
                             </button>
@@ -294,35 +323,56 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
             </div>
           ) : (
             /* Webhook documentation & live test */
-            <div className="space-y-3.5 text-xs">
+            <div className="space-y-4 text-xs">
               <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl">
                 <div className="flex items-center gap-1.5 font-bold text-[#005CB9] mb-1">
                   <AlertCircle className="w-4 h-4" />
-                  <span>Webhook URL Activa</span>
+                  <span>Flujo Completo de 2 Pasos entre Apps</span>
                 </div>
-                <p className="text-[11px] text-gray-600 mb-2">
-                  Cualquier aplicación externa de personal o dispositivo IoT puede invocar este webhook vía POST:
+                <p className="text-[11px] text-gray-600 leading-relaxed">
+                  1. El <strong>cliente</strong> solicita asistencia con <code>POST /api/call-assistance</code> (queda en estado <em>pendiente</em>, sin nadie asignado).<br/>
+                  2. La <strong>app de asesores</strong> recibe el lugar y motivo, y confirma con <code>POST /api/call-assistance/:id/accept</code> enviando el nombre del asesor.<br/>
+                  3. La pantalla del <strong>cliente</strong> detecta la asignación y le muestra quién va en camino.
                 </p>
-                <code className="block bg-white p-2 rounded-lg font-mono text-[11px] text-gray-800 border border-blue-200 select-all overflow-x-auto">
-                  POST {currentHost}/api/call-assistance
-                </code>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-bold text-gray-700 text-xs">Ejemplo cURL para probar:</span>
+                  <span className="font-bold text-gray-800 text-xs">Código para la App de Asesores (Aceptar llamada):</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard?.writeText(curlExample);
-                      onShowToast('cURL copiado al portapapeles', true);
+                      const snippet = `// 1. Cuando el asesor pulsa "Voy en camino" en su app:
+async function confirmarAsistencia(callId, nombreAsesor) {
+  const res = await fetch("${currentHost}/api/call-assistance/" + callId + "/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      advisorName: nombreAsesor, // Ej: "Carlos Mendoza"
+      estimatedArrival: "1-2 minutos"
+    })
+  });
+  return await res.json();
+}`;
+                      navigator.clipboard?.writeText(snippet);
+                      onShowToast('Código de asesor copiado', true);
                     }}
                     className="text-[10px] text-[#005CB9] font-bold flex items-center gap-1 hover:underline"
                   >
-                    <Copy className="w-3 h-3" /> Copiar comando
+                    <Copy className="w-3 h-3" /> Copiar código
                   </button>
                 </div>
                 <pre className="bg-gray-900 text-green-400 p-3 rounded-xl font-mono text-[10px] overflow-x-auto leading-relaxed">
-                  {curlExample}
+{`// 1. En la App de Asesores al pulsar "Voy en camino":
+const res = await fetch("${currentHost}/api/call-assistance/" + callId + "/accept", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    advisorName: "Carlos Mendoza (Piso de Ventas)",
+    estimatedArrival: "1-2 minutos"
+  })
+});
+const data = await res.json();
+console.log("Asignado exitosamente:", data.call);`}
                 </pre>
               </div>
 
@@ -331,7 +381,7 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                 className="w-full bg-[#005CB9] text-white font-bold py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 shadow-xs"
               >
                 <Send className="w-3.5 h-3.5 text-[#FFD200]" />
-                Ejecutar solicitud de prueba ahora
+                Simular llamada pendiente de cliente ahora
               </button>
             </div>
           )}
