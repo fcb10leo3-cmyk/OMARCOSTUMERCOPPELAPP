@@ -7,12 +7,24 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
-  RefreshCw,
+  Flame,
   Send,
   Radio,
   Copy
 } from 'lucide-react';
 import { AssistanceCallResponse } from './AssistanceModal';
+import {
+  db,
+  collection,
+  doc,
+  onSnapshot,
+  updateDoc,
+  query,
+  orderBy,
+  limit,
+  addDoc,
+  serverTimestamp
+} from '../firebase';
 
 interface AdvisorTerminalModalProps {
   isOpen: boolean;
@@ -27,90 +39,143 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
 }) => {
   const [calls, setCalls] = useState<AssistanceCallResponse[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'cola' | 'webhook'>('cola');
-
-  const fetchCalls = async () => {
-    try {
-      setIsLoading(true);
-      const res = await fetch('/api/call-assistance');
-      const data = await res.json();
-      if (data.success && data.calls) {
-        setCalls(data.calls);
-      }
-    } catch (err) {
-      console.warn('Error fetching assistance calls:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchCalls();
-      const interval = setInterval(fetchCalls, 3500);
-      return () => clearInterval(interval);
-    }
-  }, [isOpen]);
-
+  const [activeTab, setActiveTab] = useState<'cola' | 'firebase'>('cola');
   const [myAdvisorName, setMyAdvisorName] = useState('Carlos Mendoza (Piso de Ventas)');
 
+  // Real-time Firestore listener for collection "asistencias"
+  useEffect(() => {
+    if (!isOpen) return;
+
+    setIsLoading(true);
+    const q = query(collection(db, 'asistencias'), orderBy('createdAt', 'desc'), limit(30));
+
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const loaded: AssistanceCallResponse[] = [];
+        snapshot.forEach((d) => {
+          const item = d.data();
+          let createdAtStr = new Date().toISOString();
+          if (item.createdAt?.toDate) {
+            createdAtStr = item.createdAt.toDate().toISOString();
+          }
+
+          loaded.push({
+            id: d.id,
+            customerPin: item.customerPin || '----',
+            aisle: item.aisle || 'Pasillo en tienda',
+            department: item.department || 'Piso de Ventas',
+            reason: item.reason || 'Solicitud de asistencia',
+            status: item.status || 'pendiente',
+            advisorName: item.advisorName || null,
+            estimatedArrival: item.estimatedArrival || null,
+            createdAt: createdAtStr
+          });
+        });
+        setCalls(loaded);
+        setIsLoading(false);
+      },
+      (err) => {
+        console.warn('Error al conectar con Firestore en terminal de asesor:', err);
+        setIsLoading(false);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [isOpen]);
+
+  // Advisor claims and confirms they are on their way
   const handleAcceptCall = async (id: string) => {
     try {
-      const res = await fetch(`/api/call-assistance/${id}/accept`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          advisorName: myAdvisorName,
-          estimatedArrival: '1-2 minutos'
-        })
+      await updateDoc(doc(db, 'asistencias', id), {
+        status: 'en_camino',
+        advisorName: myAdvisorName,
+        estimatedArrival: '1-2 minutos'
       });
-      const data = await res.json();
-      if (data.success) {
-        onShowToast(`¡Confirmado! ${myAdvisorName} asignado`, true);
-        fetchCalls();
-      }
-    } catch {
+      onShowToast(`¡Confirmado! ${myAdvisorName} va en camino`, true);
+    } catch (err) {
+      console.error('Error al actualizar Firestore:', err);
       onShowToast('Error al confirmar asistencia');
     }
   };
 
-  const handleSimulateExternalWebhook = async () => {
+  // Mark call as completed in Firestore
+  const handleResolveCall = async (id: string) => {
     try {
-      const res = await fetch('/api/call-assistance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          aisle: 'Pasillo 3 - Muebles y Salas',
-          storeDepartment: 'Mueblería',
-          reason: 'Cliente solicita apoyo con cotización de sala',
-          requesterRole: 'cliente',
-          requesterName: 'App Móvil Consumidor (Prueba Webhook)',
-          urgency: 'normal'
-        })
+      await updateDoc(doc(db, 'asistencias', id), {
+        status: 'atendido'
       });
-      const data = await res.json();
-      if (data.success) {
-        onShowToast(`¡Webhook recibido con éxito! PIN: ${data.call.customerPin}`, true);
-        fetchCalls();
-      }
-    } catch {
-      onShowToast('Error ejecutando webhook');
+      onShowToast('Marcado como atendido', true);
+    } catch (err) {
+      console.error('Error al actualizar Firestore:', err);
+      onShowToast('Error al marcar atendido');
+    }
+  };
+
+  // Simulate a test customer call in Firestore
+  const handleSimulateFirestoreCustomer = async () => {
+    try {
+      const pin = Math.floor(1000 + Math.random() * 9000).toString();
+      await addDoc(collection(db, 'asistencias'), {
+        aisle: 'Pasillo 3 - Muebles y Salas',
+        reason: 'Cliente solicita apoyo con cotización de sala',
+        customerPin: pin,
+        department: 'Mueblería',
+        status: 'pendiente',
+        advisorName: null,
+        estimatedArrival: null,
+        createdAt: serverTimestamp()
+      });
+      onShowToast(`Doc creado en Firestore (PIN: ${pin})`, true);
+    } catch (err) {
+      console.error('Error al crear doc de prueba:', err);
+      onShowToast('Error al crear doc en Firestore');
     }
   };
 
   if (!isOpen) return null;
 
-  const currentHost = typeof window !== 'undefined' ? window.location.origin : 'https://[TU-URL-DE-ESTA-APP]';
-  const curlExample = `curl -X POST "${currentHost}/api/call-assistance" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "aisle": "Pasillo 3 - Muebles y Salas",
-    "storeDepartment": "Mueblería",
-    "reason": "Cliente solicita apoyo con cotización de sala",
-    "requesterRole": "cliente",
-    "requesterName": "App Móvil Consumidor",
-    "urgency": "normal"
-  }'`;
+  const advisorCodeSnippet = `// En la OTRA APP (App de Asesores Coppel):
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, query, where, onSnapshot, doc, updateDoc } from "firebase/firestore";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCCeLrgPDOLERlr0lHe8Y1ugliPxWcyab0",
+  authDomain: "coppel-asistencia.firebaseapp.com",
+  projectId: "coppel-asistencia",
+  storageBucket: "coppel-asistencia.firebasestorage.app",
+  messagingSenderId: "484673873075",
+  appId: "1:484673873075:web:7f483347a495126122bcc6"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// 1. Escuchar solicitudes pendientes en tiempo real:
+const q = query(collection(db, "asistencias"), where("status", "==", "pendiente"));
+onSnapshot(q, (snapshot) => {
+  snapshot.docChanges().forEach((change) => {
+    if (change.type === "added") {
+      const llamada = change.doc.data();
+      console.log("Nueva llamada:", change.doc.id);
+      console.log("- Lugar:", llamada.aisle);
+      console.log("- Motivo:", llamada.reason);
+      console.log("- PIN Cliente:", llamada.customerPin);
+    }
+  });
+});
+
+// 2. Al pulsar "Voy en camino", actualizar el documento:
+async function confirmarQueVoyEnCamino(docId, nombreDelAsesor) {
+  const docRef = doc(db, "asistencias", docId);
+  await updateDoc(docRef, {
+    status: "en_camino",
+    advisorName: nombreDelAsesor, // Ej: "Carlos Mendoza"
+    estimatedArrival: "1-2 minutos"
+  });
+}`;
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 animate-in fade-in">
@@ -124,27 +189,19 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="font-extrabold text-sm text-white">
-                  Terminal de Asesores Coppel
+                  Terminal Asesores Coppel
                 </h3>
-                <span className="flex items-center gap-1 text-[10px] bg-green-500/30 text-green-300 font-bold px-2 py-0.5 rounded-full">
-                  <Radio className="w-2.5 h-2.5 animate-pulse" /> En vivo
+                <span className="flex items-center gap-1 text-[10px] bg-amber-500/30 text-amber-300 font-bold px-2 py-0.5 rounded-full border border-amber-400/30">
+                  <Flame className="w-3 h-3 text-[#FFD200]" /> Firestore en Vivo
                 </span>
               </div>
               <p className="text-[10px] text-blue-200">
-                Piso de Ventas • Notificaciones de Asistencia en Tiempo Real
+                Colección: <strong className="text-white">asistencias</strong> • Proyecto: <strong className="text-white">coppel-asistencia</strong>
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-1">
-            <button
-              onClick={fetchCalls}
-              disabled={isLoading}
-              className="p-1.5 hover:bg-white/10 rounded-lg text-blue-200 hover:text-white transition"
-              title="Actualizar lista"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-            </button>
             <button
               onClick={onClose}
               className="p-1.5 hover:bg-white/10 rounded-lg text-blue-200 hover:text-white transition"
@@ -165,18 +222,18 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
             }`}
           >
             <Bell className="w-3.5 h-3.5" />
-            Solicitudes en Tienda ({calls.length})
+            Solicitudes en Vivo ({calls.length})
           </button>
           <button
-            onClick={() => setActiveTab('webhook')}
+            onClick={() => setActiveTab('firebase')}
             className={`flex-1 py-2.5 text-center transition flex items-center justify-center gap-1.5 ${
-              activeTab === 'webhook'
+              activeTab === 'firebase'
                 ? 'border-b-2 border-[#005CB9] text-[#005CB9] bg-white'
                 : 'text-gray-500 hover:text-gray-800'
             }`}
           >
-            <Send className="w-3.5 h-3.5" />
-            Conectar Webhook Externo
+            <Flame className="w-3.5 h-3.5 text-amber-500" />
+            Código Firestore para la Otra App
           </button>
         </div>
 
@@ -186,13 +243,13 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                  Bandeja de llamadas de clientes
+                  Bandeja Firestore: asistencias
                 </span>
                 <button
-                  onClick={handleSimulateExternalWebhook}
-                  className="text-[10px] bg-yellow-100 hover:bg-yellow-200 text-yellow-900 font-bold px-2.5 py-1 rounded-full transition flex items-center gap-1"
+                  onClick={handleSimulateFirestoreCustomer}
+                  className="text-[10px] bg-yellow-100 hover:bg-yellow-200 text-yellow-900 font-bold px-2.5 py-1 rounded-full transition flex items-center gap-1 shadow-xs"
                 >
-                  <Send className="w-3 h-3" /> + Simular llamada webhook
+                  <Send className="w-3 h-3" /> + Crear doc de prueba
                 </button>
               </div>
 
@@ -208,19 +265,22 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                 />
               </div>
 
-              {calls.length === 0 ? (
+              {isLoading && calls.length === 0 ? (
+                <div className="text-center py-8 text-xs text-gray-400">
+                  Cargando solicitudes desde Firestore...
+                </div>
+              ) : calls.length === 0 ? (
                 <div className="text-center py-10 border border-dashed border-gray-200 rounded-2xl">
                   <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto mb-2" />
                   <p className="text-xs font-bold text-gray-700">Sin llamadas pendientes</p>
                   <p className="text-[11px] text-gray-400 mt-1">
-                    Todos los clientes en tienda han sido atendidos.
+                    No hay documentos en la colección asistencias en este momento.
                   </p>
                 </div>
               ) : (
                 calls.map((call) => {
-                  const isPendiente = call.status === 'pendiente' || !call.assignedAdvisor;
+                  const isPendiente = call.status === 'pendiente' || !call.advisorName;
                   const isEnCamino = call.status === 'en_camino';
-                  const isAtendido = call.status === 'atendido';
 
                   return (
                     <div
@@ -229,14 +289,14 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                         isPendiente
                           ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/50 shadow-sm'
                           : isEnCamino
-                          ? 'bg-blue-50/50 border-blue-200'
+                          ? 'bg-green-50/60 border-green-300'
                           : 'bg-gray-50 border-gray-200 opacity-60'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono text-xs font-black text-[#005CB9]">
+                            <span className="font-mono text-xs font-black text-[#005CB9] truncate max-w-[140px]">
                               {call.id}
                             </span>
                             <span
@@ -244,11 +304,11 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                                 isPendiente
                                   ? 'bg-amber-200 text-amber-900 animate-pulse'
                                   : isEnCamino
-                                  ? 'bg-blue-100 text-blue-800'
-                                  : 'bg-green-100 text-green-800'
+                                  ? 'bg-green-200 text-green-900 font-bold'
+                                  : 'bg-gray-200 text-gray-800'
                               }`}
                             >
-                              {isPendiente ? '⚠️ Sin Asignar' : call.status}
+                              {isPendiente ? '⚠️ Pendiente' : call.status}
                             </span>
                           </div>
                           <h4 className="font-bold text-xs text-gray-900 mt-1 leading-tight">
@@ -275,7 +335,7 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                         </div>
                         <div className="flex items-center gap-1 truncate">
                           <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                          <span>{new Date(call.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span>{new Date(call.createdAt as string).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                       </div>
 
@@ -283,8 +343,8 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
                       <div className="flex items-center justify-between pt-2 border-t border-gray-200/60 text-xs">
                         <span className="text-[10px] text-gray-500 font-medium truncate max-w-[170px]">
                           Asesor:{' '}
-                          <strong className={isPendiente ? 'text-amber-700' : 'text-gray-800'}>
-                            {call.assignedAdvisor || 'Nadie asignado aún'}
+                          <strong className={isPendiente ? 'text-amber-700' : 'text-green-800'}>
+                            {call.advisorName || 'Sin asignar'}
                           </strong>
                         </span>
 
@@ -300,15 +360,7 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
 
                           {isEnCamino && (
                             <button
-                              onClick={async () => {
-                                await fetch(`/api/call-assistance/${call.id}`, {
-                                  method: 'PATCH',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ status: 'atendido' })
-                                });
-                                onShowToast('Marcado como atendido', true);
-                                fetchCalls();
-                              }}
+                              onClick={() => handleResolveCall(call.id)}
                               className="bg-green-600 hover:bg-green-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg transition"
                             >
                               Atendido ✓
@@ -322,67 +374,35 @@ export const AdvisorTerminalModal: React.FC<AdvisorTerminalModalProps> = ({
               )}
             </div>
           ) : (
-            /* Webhook documentation & live test */
+            /* Firestore documentation & code */
             <div className="space-y-4 text-xs">
-              <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl">
-                <div className="flex items-center gap-1.5 font-bold text-[#005CB9] mb-1">
-                  <AlertCircle className="w-4 h-4" />
-                  <span>Flujo Completo de 2 Pasos entre Apps</span>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl">
+                <div className="flex items-center gap-1.5 font-bold text-amber-900 mb-1">
+                  <Flame className="w-4 h-4 text-amber-600" />
+                  <span>Conexión Directa a Firestore</span>
                 </div>
-                <p className="text-[11px] text-gray-600 leading-relaxed">
-                  1. El <strong>cliente</strong> solicita asistencia con <code>POST /api/call-assistance</code> (queda en estado <em>pendiente</em>, sin nadie asignado).<br/>
-                  2. La <strong>app de asesores</strong> recibe el lugar y motivo, y confirma con <code>POST /api/call-assistance/:id/accept</code> enviando el nombre del asesor.<br/>
-                  3. La pantalla del <strong>cliente</strong> detecta la asignación y le muestra quién va en camino.
+                <p className="text-[11px] text-gray-700 leading-relaxed">
+                  Ambas aplicaciones se comunican directamente a través de la colección <strong>asistencias</strong> en Firebase Firestore. No requieren endpoints HTTP intermedios ni servidores de relay.
                 </p>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-bold text-gray-800 text-xs">Código para la App de Asesores (Aceptar llamada):</span>
+                  <span className="font-bold text-gray-800 text-xs">Código Firestore para la App de Asesores:</span>
                   <button
                     onClick={() => {
-                      const snippet = `// 1. Cuando el asesor pulsa "Voy en camino" en su app:
-async function confirmarAsistencia(callId, nombreAsesor) {
-  const res = await fetch("${currentHost}/api/call-assistance/" + callId + "/accept", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      advisorName: nombreAsesor, // Ej: "Carlos Mendoza"
-      estimatedArrival: "1-2 minutos"
-    })
-  });
-  return await res.json();
-}`;
-                      navigator.clipboard?.writeText(snippet);
-                      onShowToast('Código de asesor copiado', true);
+                      navigator.clipboard?.writeText(advisorCodeSnippet);
+                      onShowToast('Código Firestore copiado', true);
                     }}
                     className="text-[10px] text-[#005CB9] font-bold flex items-center gap-1 hover:underline"
                   >
                     <Copy className="w-3 h-3" /> Copiar código
                   </button>
                 </div>
-                <pre className="bg-gray-900 text-green-400 p-3 rounded-xl font-mono text-[10px] overflow-x-auto leading-relaxed">
-{`// 1. En la App de Asesores al pulsar "Voy en camino":
-const res = await fetch("${currentHost}/api/call-assistance/" + callId + "/accept", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    advisorName: "Carlos Mendoza (Piso de Ventas)",
-    estimatedArrival: "1-2 minutos"
-  })
-});
-const data = await res.json();
-console.log("Asignado exitosamente:", data.call);`}
+                <pre className="bg-gray-900 text-amber-300 p-3 rounded-xl font-mono text-[10px] overflow-x-auto leading-relaxed">
+                  {advisorCodeSnippet}
                 </pre>
               </div>
-
-              <button
-                onClick={handleSimulateExternalWebhook}
-                className="w-full bg-[#005CB9] text-white font-bold py-2.5 rounded-xl hover:bg-blue-700 transition flex items-center justify-center gap-2 shadow-xs"
-              >
-                <Send className="w-3.5 h-3.5 text-[#FFD200]" />
-                Simular llamada pendiente de cliente ahora
-              </button>
             </div>
           )}
         </div>

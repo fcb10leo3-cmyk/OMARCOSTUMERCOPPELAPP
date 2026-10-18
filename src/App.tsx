@@ -28,6 +28,14 @@ import { DigitalAccountModal } from './components/DigitalAccountModal';
 import { KioskModal } from './components/KioskModal';
 import { Toast } from './components/Toast';
 import { playSuccessChime } from './utils/audio';
+import {
+  db,
+  collection,
+  addDoc,
+  doc,
+  onSnapshot,
+  serverTimestamp
+} from './firebase';
 
 export default function App() {
   // Navigation: 0 = Inicio, 1 = Escanear, 2 = Carrito, 3 = Salida
@@ -47,10 +55,11 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [isVoiceListening, setIsVoiceListening] = useState(false);
 
-  // Modals & Assistance State
+  // Modals & Assistance State (Firestore backed)
   const [showBiometric, setShowBiometric] = useState(false);
   const [showAssistance, setShowAssistance] = useState(false);
   const [showAdvisorTerminal, setShowAdvisorTerminal] = useState(false);
+  const [activeAssistanceDocId, setActiveAssistanceDocId] = useState<string | null>(null);
   const [assistanceCallData, setAssistanceCallData] = useState<AssistanceCallResponse | null>(null);
   const [isAssistanceLoading, setIsAssistanceLoading] = useState(false);
   const [showAccountModal, setShowAccountModal] = useState(false);
@@ -280,72 +289,97 @@ export default function App() {
     showToast('Gracias por tu compra en Coppel', true);
   };
 
-  // Store staff assistance trigger - Connects with /api/call-assistance webhook
+  // Store staff assistance trigger - Integrated with Firebase Firestore
   const handleTriggerAssistance = async (
     customReason?: string,
     customAisle?: string
   ) => {
     setIsAssistanceLoading(true);
     setShowAssistance(true);
-    showToast('Enviando solicitud a asesores de tienda...', false);
+    showToast('Buscando asesor disponible...', false);
 
-    const currentTotal = cartItems.reduce((acc, it) => acc + it.price * it.quantity, 0);
+    const customerPin = Math.floor(1000 + Math.random() * 9000).toString();
+    const aisle = customAisle || 'Pasillo 4 - Calzado y Telefonía';
+    const reason = customReason || 'Cliente solicita apoyo con compra en tienda';
+    const department = 'Piso de Ventas';
 
     try {
-      const res = await fetch('/api/call-assistance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          aisle: customAisle || 'Pasillo 4 - Calzado y Telefonía',
-          storeDepartment: 'Piso de Ventas',
-          reason: customReason || 'Cliente solicita apoyo con compra en tienda',
-          requesterRole: 'cliente',
-          requesterName: 'App Móvil Consumidor',
-          urgency: 'normal',
-          cartTotal: currentTotal
-        })
+      // 1. Create document in Firestore collection "asistencias"
+      const docRef = await addDoc(collection(db, 'asistencias'), {
+        aisle,
+        reason,
+        customerPin,
+        department,
+        status: 'pendiente',
+        advisorName: null,
+        estimatedArrival: null,
+        createdAt: serverTimestamp()
       });
 
-      const data = await res.json();
-      if (data.success && data.call) {
-        setAssistanceCallData(data.call);
-        showToast(
-          `Solicitud enviada (PIN: ${data.call.customerPin}). Esperando a un asesor...`,
-          false
-        );
-      }
+      // 2. Save document id and initialize local state
+      setActiveAssistanceDocId(docRef.id);
+      setAssistanceCallData({
+        id: docRef.id,
+        customerPin,
+        aisle,
+        department,
+        reason,
+        status: 'pendiente',
+        advisorName: null,
+        estimatedArrival: null
+      });
+
+      showToast(`Buscando asesor disponible... (PIN: ${customerPin})`, false);
     } catch (error) {
-      console.error('Error al conectar con la app de personal:', error);
-      showToast('Asistencia solicitada (Modo offline)');
+      console.error('Error al crear documento en Firestore:', error);
+      showToast('Error al conectar con Firestore');
     } finally {
       setIsAssistanceLoading(false);
     }
   };
 
-  // Poll assistance call status while waiting for an advisor to accept in their app
+  // 3. Listen to the document in real time with onSnapshot
   useEffect(() => {
-    if (!showAssistance || !assistanceCallData?.id || assistanceCallData.status !== 'pendiente') {
-      return;
-    }
+    if (!activeAssistanceDocId) return;
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/call-assistance/${assistanceCallData.id}`);
-        const data = await res.json();
-        if (data.success && data.call) {
-          if (data.call.status === 'en_camino' && data.call.assignedAdvisor) {
-            setAssistanceCallData(data.call);
-            playSuccessChime();
-            showToast(`¡Asignado! ${data.call.assignedAdvisor} va en camino`, true);
-          }
+    const docRef = doc(db, 'asistencias', activeAssistanceDocId);
+    const unsubscribe = onSnapshot(
+      docRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const status = (data.status as 'pendiente' | 'en_camino' | 'atendido' | 'cancelado') || 'pendiente';
+          const advisorName = (data.advisorName || data.assignedAdvisor || null) as string | null;
+          const estimatedArrival = (data.estimatedArrival || null) as string | null;
+
+          setAssistanceCallData((prev) => {
+            // Check if advisor was just assigned
+            if (prev?.status === 'pendiente' && status === 'en_camino' && advisorName) {
+              playSuccessChime();
+              showToast(`¡${advisorName} va en camino!`, true);
+            }
+            return {
+              id: docSnap.id,
+              customerPin: data.customerPin || prev?.customerPin || '',
+              aisle: data.aisle || prev?.aisle || '',
+              department: data.department || prev?.department || 'Piso de Ventas',
+              reason: data.reason || prev?.reason || '',
+              status,
+              advisorName,
+              estimatedArrival
+            };
+          });
         }
-      } catch (err) {
-        console.warn('Error polling assistance call status:', err);
+      },
+      (error) => {
+        console.warn('Error en onSnapshot de asistencia Firestore:', error);
       }
-    }, 1500);
+    );
 
-    return () => clearInterval(interval);
-  }, [showAssistance, assistanceCallData]);
+    return () => {
+      unsubscribe();
+    };
+  }, [activeAssistanceDocId]);
 
   return (
     <div className="min-h-screen bg-slate-200 flex flex-col items-center justify-center sm:p-4 select-none">

@@ -5,15 +5,17 @@ export interface AssistanceCallResponse {
   id: string;
   customerPin: string;
   aisle: string;
-  storeDepartment: string;
+  department?: string;
+  storeDepartment?: string;
   reason: string;
-  requesterRole: string;
-  requesterName: string;
-  urgency: 'normal' | 'urgente';
+  requesterRole?: string;
+  requesterName?: string;
+  urgency?: 'normal' | 'urgente';
   status: 'pendiente' | 'en_camino' | 'atendido' | 'cancelado';
-  assignedAdvisor: string | null;
+  advisorName: string | null;
+  assignedAdvisor?: string | null;
   estimatedArrival: string | null;
-  createdAt: string;
+  createdAt?: unknown;
   acceptedAt?: string;
 }
 
@@ -52,7 +54,8 @@ export const AssistanceModal: React.FC<AssistanceModalProps> = ({
     'Pasillo 2 - Electrónica y TV'
   ];
 
-  const isAssigned = callData?.status === 'en_camino' && Boolean(callData?.assignedAdvisor);
+  const advisor = callData?.advisorName || callData?.assignedAdvisor;
+  const isAssigned = callData?.status === 'en_camino' && Boolean(advisor);
 
   return (
     <div
@@ -61,7 +64,9 @@ export const AssistanceModal: React.FC<AssistanceModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-3xl p-5 w-11/12 max-w-sm flex flex-col items-center text-center shadow-2xl transform scale-100 animate-in zoom-in-95 duration-200 relative"
+        className={`bg-white rounded-3xl p-5 w-11/12 max-w-sm flex flex-col items-center text-center shadow-2xl transform scale-100 animate-in zoom-in-95 duration-200 relative border-2 ${
+          isAssigned ? 'border-green-400 bg-green-50/20' : 'border-transparent'
+        }`}
       >
         <button
           onClick={onClose}
@@ -77,8 +82,8 @@ export const AssistanceModal: React.FC<AssistanceModalProps> = ({
             <Hand className="w-8 h-8 text-[#005CB9] z-10" />
           </div>
         ) : (
-          <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mb-3 border-2 border-green-200 relative animate-in zoom-in-75 duration-300">
-            <UserCheck className="w-9 h-9 text-green-600 z-10" />
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-3 border-2 border-green-400 relative animate-in zoom-in-75 duration-300">
+            <UserCheck className="w-9 h-9 text-green-700 z-10" />
           </div>
         )}
 
@@ -86,12 +91,12 @@ export const AssistanceModal: React.FC<AssistanceModalProps> = ({
         {!isAssigned ? (
           <div className="inline-flex items-center gap-1.5 bg-yellow-100 text-yellow-900 text-[10px] font-extrabold px-3 py-1 rounded-full mb-1.5">
             <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-            <span>{isLoading ? 'Conectando con Asesores...' : 'Buscando asesor disponible...'}</span>
+            <span>{isLoading ? 'Conectando con Firestore...' : 'Buscando asesor disponible...'}</span>
           </div>
         ) : (
           <div className="inline-flex items-center gap-1.5 bg-green-100 text-green-800 text-[10px] font-extrabold px-3 py-1 rounded-full mb-1.5 animate-in fade-in">
             <span className="w-2 h-2 rounded-full bg-green-500" />
-            <span>¡Asesor asignado! En camino</span>
+            <span>¡Asesor en camino!</span>
           </div>
         )}
 
@@ -99,41 +104,41 @@ export const AssistanceModal: React.FC<AssistanceModalProps> = ({
         {!isAssigned ? (
           <>
             <h3 className="font-extrabold text-gray-900 text-base leading-snug mb-1">
-              Solicitud de Asistencia Enviada
+              Buscando asesor disponible...
             </h3>
             <p className="text-xs text-gray-500 mb-2">
-              Se ha notificado a la app de asesores en piso. En cuanto alguien acepte, verás su nombre aquí.
+              Tu solicitud fue enviada en tiempo real. En cuanto un asesor acepte, verás su nombre aquí.
             </p>
           </>
         ) : (
           <>
             <h3 className="font-extrabold text-green-700 text-lg leading-snug mb-0.5">
-              ¡{callData?.assignedAdvisor} va en camino!
+              ¡{advisor} va en camino!
             </h3>
-            <p className="text-xs text-gray-600 mb-2">
-              Un asesor de Coppel se dirige a tu ubicación para atenderte.
+            <p className="text-xs text-gray-600 mb-2 font-medium">
+              Tiempo estimado de llegada: <strong className="text-gray-900">{callData?.estimatedArrival || '1-2 minutos'}</strong>
             </p>
           </>
         )}
 
-        {/* Customer PIN Handshake Card (As specified in webhook response) */}
+        {/* Customer PIN Handshake Card */}
         {callData?.customerPin && (
           <div className={`w-full rounded-2xl p-3 my-1.5 text-center shadow-xs transition-colors ${
-            isAssigned ? 'bg-green-50/80 border-2 border-green-300' : 'bg-blue-50/80 border-2 border-[#005CB9]/30'
+            isAssigned ? 'bg-green-100/70 border-2 border-green-400' : 'bg-blue-50/80 border-2 border-[#005CB9]/30'
           }`}>
             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest block">
               Tu PIN de Asistencia en Tienda
             </span>
             <div className={`text-3xl font-black font-mono tracking-widest my-0.5 ${
-              isAssigned ? 'text-green-700' : 'text-[#005CB9]'
+              isAssigned ? 'text-green-800' : 'text-[#005CB9]'
             }`}>
               {callData.customerPin}
             </div>
             <p className="text-[10px] text-gray-600 font-medium">
               {isAssigned ? (
-                <>Muestra este código a <strong>{callData.assignedAdvisor}</strong> al llegar.</>
+                <>Muestra este PIN a <strong>{advisor}</strong> cuando llegue a tu pasillo.</>
               ) : (
-                <>Guarda este PIN para identificarte con tu asesor cuando llegue.</>
+                <>Guarda este PIN para validar tu asistencia cuando llegue tu asesor.</>
               )}
             </p>
           </div>
