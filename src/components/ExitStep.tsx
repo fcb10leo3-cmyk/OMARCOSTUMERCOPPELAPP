@@ -73,6 +73,12 @@ export const ExitStep: React.FC<ExitStepProps> = ({
     return `${m}:${s}`;
   };
 
+  const ticketText =
+    `Ticket digital Coppel #${ticket.folio}\n` +
+    `Fecha: ${ticket.date}\n` +
+    ticket.items.map((i) => `- ${i.quantity} x ${i.name}: $${(i.price * i.quantity).toLocaleString('es-MX')}`).join('\n') +
+    `\nTotal: $${ticket.total.toLocaleString('es-MX')}\nPago: ${ticket.paymentMethod}`;
+
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
@@ -191,6 +197,28 @@ export const ExitStep: React.FC<ExitStepProps> = ({
             ))}
           </div>
         )}
+      </div>
+
+      <p className="w-full max-w-[290px] mt-3 text-[11px] font-bold text-yellow-200 bg-blue-900/50 rounded-lg py-2 px-3">
+        Tu QR de salida basta para salir. No necesitas ticket impreso.
+      </p>
+
+      {/* Ticket digital por WhatsApp / correo */}
+      <div className="w-full max-w-[290px] mt-3 grid grid-cols-2 gap-2">
+        <a
+          href={`https://wa.me/?text=${encodeURIComponent(ticketText)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="bg-green-600 hover:bg-green-500 text-white text-[11px] font-bold py-2.5 rounded-xl text-center active:scale-95 transition"
+        >
+          Enviar por WhatsApp
+        </a>
+        <a
+          href={`mailto:?subject=${encodeURIComponent('Ticket Coppel #' + ticket.folio)}&body=${encodeURIComponent(ticketText)}`}
+          className="bg-white/90 hover:bg-white text-[#005CB9] text-[11px] font-bold py-2.5 rounded-xl text-center active:scale-95 transition"
+        >
+          Enviar por correo
+        </a>
       </div>
 
       {/* Kiosk Action */}
