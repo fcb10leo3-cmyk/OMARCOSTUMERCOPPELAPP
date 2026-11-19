@@ -20,6 +20,11 @@ export const ScannerStep: React.FC<ScannerStepProps> = ({
   const [flashFeedback, setFlashFeedback] = useState(false);
   const [lastScannedItem, setLastScannedItem] = useState<Product | null>(null);
   const [showManualPicker, setShowManualPicker] = useState(false);
+  const [nameQuery, setNameQuery] = useState('');
+  const norm = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const nameResults = nameQuery.trim().length >= 2
+    ? catalog.filter((c) => norm(c.name + ' ' + c.depto).includes(norm(nameQuery.trim()))).slice(0, 6)
+    : [];
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -245,6 +250,33 @@ export const ScannerStep: React.FC<ScannerStepProps> = ({
               Foto Temporal
             </span>
           </button>
+        </div>
+
+        {/* Búsqueda manual por nombre */}
+        <div className="mt-3">
+          <input
+            value={nameQuery}
+            onChange={(e) => setNameQuery(e.target.value)}
+            placeholder="¿No lee el código? Busca por nombre (ej. tenis, lavadora)"
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#005CB9]"
+          />
+          {nameQuery.trim().length >= 2 && (
+            <div className="mt-1.5 space-y-1.5">
+              {nameResults.length === 0 && (
+                <p className="text-[11px] text-gray-500">Sin resultados. Prueba otra palabra o pide ayuda a un asesor.</p>
+              )}
+              {nameResults.map((item) => (
+                <div
+                  key={item.id}
+                  onClick={() => { triggerScanSuccess(item); setNameQuery(''); }}
+                  className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-200 hover:border-blue-300 cursor-pointer text-xs"
+                >
+                  <span className="font-bold text-gray-800 truncate pr-2">{item.name}</span>
+                  <span className="font-extrabold text-[#005CB9] shrink-0">${item.price.toLocaleString('es-MX')}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Shelf Barcode Manual Selector drawer trigger */}
