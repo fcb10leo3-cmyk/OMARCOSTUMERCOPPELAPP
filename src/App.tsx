@@ -292,7 +292,8 @@ export default function App() {
   // Store staff assistance trigger - Integrated with Firebase Firestore
   const handleTriggerAssistance = async (
     customReason?: string,
-    customAisle?: string
+    customAisle?: string,
+    extra?: { product?: string; creditStatus?: string }
   ) => {
     setIsAssistanceLoading(true);
     setShowAssistance(true);
@@ -302,6 +303,11 @@ export default function App() {
     const aisle = customAisle || 'Pasillo 4 - Calzado y Telefonía';
     const reason = customReason || 'Cliente solicita apoyo con compra en tienda';
     const department = 'Piso de Ventas';
+    const product = (extra?.product ??
+      (cartItems.length
+        ? cartItems.map((i) => `${i.quantity}x ${i.name}`).join(', ')
+        : '')).slice(0, 150);
+    const creditStatus = (extra?.creditStatus ?? 'Crédito Coppel: $18,500 disp. (demo)').slice(0, 80);
 
     try {
       // 1. Create document in Firestore collection "asistencias"
@@ -313,6 +319,8 @@ export default function App() {
         status: 'pendiente',
         advisorName: null,
         estimatedArrival: null,
+        ...(product ? { product } : {}),
+        creditStatus,
         createdAt: serverTimestamp()
       });
 
@@ -481,6 +489,13 @@ export default function App() {
               onRemoveItem={handleRemoveItem}
               onNavigateToScan={() => setActiveTab(1)}
               onRequestBiometricPay={handleRequestBiometricPay}
+              onPayWithAdvisor={() =>
+                handleTriggerAssistance(
+                  'Quiero pagar con un asesor',
+                  'Carrito / Caja',
+                  { product: cartItems.map((i) => `${i.quantity}x ${i.name}`).join(', ') }
+                )
+              }
             />
           )}
 
