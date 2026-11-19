@@ -21,6 +21,7 @@ interface CartStepProps {
   onRemoveItem: (id: string) => void;
   onNavigateToScan: () => void;
   onRequestBiometricPay: (method: PaymentMethodType, mode: CheckoutMode, freq: PaymentFrequency) => void;
+  onPayWithAdvisor?: () => void;
 }
 
 export const CartStep: React.FC<CartStepProps> = ({
@@ -28,7 +29,8 @@ export const CartStep: React.FC<CartStepProps> = ({
   onUpdateQuantity,
   onRemoveItem,
   onNavigateToScan,
-  onRequestBiometricPay
+  onRequestBiometricPay,
+  onPayWithAdvisor
 }) => {
   const [checkoutMode, setCheckoutMode] = useState<CheckoutMode>(null);
   const [frequency, setFrequency] = useState<PaymentFrequency>('quincenal');
@@ -398,6 +400,26 @@ export const CartStep: React.FC<CartStepProps> = ({
                   </div>
                 </div>
 
+                {/* Simulador de crédito (estimado) */}
+                {checkoutMode === 'planes' && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs">
+                    <p className="font-extrabold text-[#005CB9] mb-1.5">Simulador de crédito · estimado</p>
+                    <div className="space-y-1">
+                      {(['semanal', 'quincenal', 'mensual'] as PaymentFrequency[]).map((f) => {
+                        const c = getFrequencyConfig(f);
+                        const pago = (currentTotal * c.interest) / c.periods;
+                        return (
+                          <div key={f} className={`flex justify-between ${f === frequency ? 'font-black text-[#005CB9]' : 'text-gray-600'}`}>
+                            <span>{c.periods} pagos {c.displayPeriod.toLowerCase()}</span>
+                            <span>${pago.toLocaleString('es-MX', { maximumFractionDigits: 0 })} c/u</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] text-gray-500 mt-1.5">Cifras estimadas de demostración; el asesor confirma tu plan real.</p>
+                  </div>
+                )}
+
                 {/* Botón Pagar Ahora */}
                 <button
                   onClick={handlePayClick}
@@ -407,6 +429,14 @@ export const CartStep: React.FC<CartStepProps> = ({
                   <Fingerprint className="w-5 h-5 text-[#FFD200]" />
                   Pagar Ahora
                 </button>
+                {onPayWithAdvisor && (
+                  <button
+                    onClick={onPayWithAdvisor}
+                    className="w-full bg-white text-[#005CB9] border-2 border-[#005CB9] font-extrabold py-3 rounded-xl hover:bg-blue-50 transition active:scale-95 text-sm"
+                  >
+                    Pagar con un asesor
+                  </button>
+                )}
               </div>
             )}
           </div>
