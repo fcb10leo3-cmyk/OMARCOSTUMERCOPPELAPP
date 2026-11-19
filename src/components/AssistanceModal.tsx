@@ -136,9 +136,9 @@ export const AssistanceModal: React.FC<AssistanceModalProps> = ({
             </div>
             <p className="text-[10px] text-gray-600 font-medium">
               {isAssigned ? (
-                <>Muestra este PIN a <strong>{advisor}</strong> cuando llegue a tu pasillo.</>
+                <>Díselo a <strong>{advisor}</strong> cuando llegue a tu pasillo.</>
               ) : (
-                <>Guarda este PIN para validar tu asistencia cuando llegue tu asesor.</>
+                <>Díselo al asesor cuando llegue.</>
               )}
             </p>
           </div>
